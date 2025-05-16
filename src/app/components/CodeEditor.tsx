@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 import dynamic from 'next/dynamic';
 import { useRef, useState, useEffect } from 'react';
@@ -56,27 +59,25 @@ function parseCall(code: string) {
 }
 
 export default function CodeEditor() {
-  const [value, setValue] = useState<string>(
+  const [value, setValue] = useState(
     `Gemini.gemini-2.0-flash.chat("What is the capital of France?")`
   );
   const [output, setOutput] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
-  const [theme, setTheme] = useState<string>('vs-dark');
-  const [fontSize, setFontSize] = useState<number>(14);
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [theme, setTheme] = useState('vs-dark');
+  const [fontSize, setFontSize] = useState(14);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // Load previous state from localStorage if available
-    if (typeof window !== 'undefined') {
-      const savedCode = localStorage.getItem('codeEditorValue');
-      if (savedCode) setValue(savedCode);
+    const savedCode = localStorage.getItem('codeEditorValue');
+    if (savedCode) setValue(savedCode);
 
-      const savedHistory = localStorage.getItem('codeEditorHistory');
-      if (savedHistory) setHistory(JSON.parse(savedHistory));
-    }
+    const savedHistory = localStorage.getItem('codeEditorHistory');
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
   }, []);
 
   function handleEditorDidMount() {
@@ -84,17 +85,12 @@ export default function CodeEditor() {
   }
 
   function monacoInitAutocomplete() {
-    if (typeof window === 'undefined' || !('monaco' in window)) return;
-    // @ts-expect-error: Monaco is attached to window by monaco-editor/react
+    // @ts-expect-error: Type mismatch due to third-party types
     const monaco: typeof monacoEditor | undefined = window.monaco;
     if (!monaco) return;
 
-    // Prevent duplicate registration
-    if ((window as any).__ai_model_explorer_completion_registered) return;
-    (window as any).__ai_model_explorer_completion_registered = true;
-
-    // Monaco is attached to window by monaco-editor/react
-    monaco.languages.registerCompletionItemProvider('javascript', {
+    // @ts-expect-error: Type mismatch due to third-party types
+    window.monaco.languages.registerCompletionItemProvider('javascript', {
       triggerCharacters: ['.', '('],
       provideCompletionItems: (
         model: monacoEditor.editor.ITextModel,
@@ -148,7 +144,7 @@ export default function CodeEditor() {
               detail: `${provider.label} Model`,
               range: {
                 startLineNumber: position.lineNumber,
-                startColumn: position.column - m.label.length,
+                startColumn: position.column - (m.label.length),
                 endLineNumber: position.lineNumber,
                 endColumn: position.column,
               },
@@ -235,11 +231,10 @@ export default function CodeEditor() {
 
       const updatedHistory: HistoryItem[] = [newHistoryItem, ...(history ? history.slice(0, 9) : [])];
       setHistory(updatedHistory);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
-        // Save current code to localStorage
-        localStorage.setItem('codeEditorValue', value);
-      }
+      localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
+
+      // Save current code to localStorage
+      localStorage.setItem('codeEditorValue', value);
 
       setOutput(data.response ?? null);
     } catch (e: unknown) {
@@ -250,7 +245,6 @@ export default function CodeEditor() {
       } else {
         setOutput(null);
       }
-      // eslint-disable-next-line no-console
       console.error(e);
     } finally {
       setLoading(false);
@@ -264,9 +258,7 @@ export default function CodeEditor() {
   };
 
   const copyToClipboard = (text: string) => {
-    if (typeof window !== 'undefined' && navigator?.clipboard) {
-      navigator.clipboard.writeText(text);
-    }
+    navigator.clipboard.writeText(text);
   };
 
   const loadHistoryItem = (item: { code: string }) => {
@@ -295,7 +287,6 @@ export default function CodeEditor() {
             onClick={() => setSettingsOpen(!settingsOpen)}
             className="p-2 rounded hover:bg-gray-700 transition-colors"
             title="Editor Settings"
-            type="button"
           >
             <Settings size={18} />
           </button>
@@ -304,7 +295,6 @@ export default function CodeEditor() {
             <button
               className="flex items-center gap-1 p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              type="button"
             >
               History <ChevronDown size={16} />
             </button>
@@ -397,12 +387,9 @@ export default function CodeEditor() {
           <button
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => {
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('codeEditorValue', value);
-              }
+              localStorage.setItem('codeEditorValue', value);
             }}
             title="Save to local storage"
-            type="button"
           >
             <Save size={14} />
           </button>
@@ -410,7 +397,6 @@ export default function CodeEditor() {
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => copyToClipboard(value)}
             title="Copy code"
-            type="button"
           >
             <Copy size={14} />
           </button>
@@ -426,7 +412,6 @@ export default function CodeEditor() {
           }`}
           onClick={callAPI}
           disabled={loading}
-          type="button"
         >
           {loading ? <RotateCw className="animate-spin" size={16} /> : <Play size={16} />}
           {loading ? 'Running...' : 'Run Query'}
@@ -437,7 +422,6 @@ export default function CodeEditor() {
           <button
             className="px-3 py-2 text-gray-400 hover:text-gray-200 text-sm flex items-center gap-1"
             onClick={clearOutput}
-            type="button"
           >
             <XCircle size={14} /> Clear output
           </button>
@@ -452,7 +436,6 @@ export default function CodeEditor() {
               onClick={() => copyToClipboard(output)}
               className="text-gray-400 hover:text-white p-1 rounded"
               title="Copy response"
-              type="button"
             >
               <Copy size={14} />
             </button>
