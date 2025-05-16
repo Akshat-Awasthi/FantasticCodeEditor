@@ -40,6 +40,7 @@ type HistoryItem = {
   provider: string;
   model: string;
   method: string;
+  query: string;
 };
 
 function parseCall(code: string) {
@@ -55,25 +56,27 @@ function parseCall(code: string) {
 }
 
 export default function CodeEditor() {
-  const [value, setValue] = useState(
+  const [value, setValue] = useState<string>(
     `Gemini.gemini-2.0-flash.chat("What is the capital of France?")`
   );
   const [output, setOutput] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [theme, setTheme] = useState('vs-dark');
-  const [fontSize, setFontSize] = useState(14);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
+  const [theme, setTheme] = useState<string>('vs-dark');
+  const [fontSize, setFontSize] = useState<number>(14);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // Load previous state from localStorage if available
-    const savedCode = localStorage.getItem('codeEditorValue');
-    if (savedCode) setValue(savedCode);
+    if (typeof window !== 'undefined') {
+      const savedCode = localStorage.getItem('codeEditorValue');
+      if (savedCode) setValue(savedCode);
 
-    const savedHistory = localStorage.getItem('codeEditorHistory');
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
+      const savedHistory = localStorage.getItem('codeEditorHistory');
+      if (savedHistory) setHistory(JSON.parse(savedHistory));
+    }
   }, []);
 
   function handleEditorDidMount() {
@@ -81,12 +84,17 @@ export default function CodeEditor() {
   }
 
   function monacoInitAutocomplete() {
-    // @ts-expect-error: Type mismatch due to third-party types
+    if (typeof window === 'undefined' || !('monaco' in window)) return;
+    // @ts-expect-error: Monaco is attached to window by monaco-editor/react
     const monaco: typeof monacoEditor | undefined = window.monaco;
     if (!monaco) return;
 
-    // @ts-expect-error: Type mismatch due to third-party types
-    window.monaco.languages.registerCompletionItemProvider('javascript', {
+    // Prevent duplicate registration
+    if ((window as any).__ai_model_explorer_completion_registered) return;
+    (window as any).__ai_model_explorer_completion_registered = true;
+
+    // Monaco is attached to window by monaco-editor/react
+    monaco.languages.registerCompletionItemProvider('javascript', {
       triggerCharacters: ['.', '('],
       provideCompletionItems: (
         model: monacoEditor.editor.ITextModel,
@@ -123,7 +131,7 @@ export default function CodeEditor() {
               documentation: `${firstProvider.models.length} available models`,
               range: {
                 startLineNumber: position.lineNumber,
-                startColumn: position.column,
+                startColumn: position.column - (code.length > 0 ? code.length : 0),
                 endLineNumber: position.lineNumber,
                 endColumn: position.column,
               },
@@ -140,7 +148,7 @@ export default function CodeEditor() {
               detail: `${provider.label} Model`,
               range: {
                 startLineNumber: position.lineNumber,
-                startColumn: position.column,
+                startColumn: position.column - m.label.length,
                 endLineNumber: position.lineNumber,
                 endColumn: position.column,
               },
@@ -159,7 +167,7 @@ export default function CodeEditor() {
               detail: `${method} method`,
               range: {
                 startLineNumber: position.lineNumber,
-                startColumn: position.column,
+                startColumn: position.column - method.length,
                 endLineNumber: position.lineNumber,
                 endColumn: position.column,
               },
@@ -221,15 +229,17 @@ export default function CodeEditor() {
         timestamp: new Date().toISOString(),
         provider,
         model,
-        method
+        method,
+        query,
       };
 
       const updatedHistory: HistoryItem[] = [newHistoryItem, ...(history ? history.slice(0, 9) : [])];
       setHistory(updatedHistory);
-      localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
-
-      // Save current code to localStorage
-      localStorage.setItem('codeEditorValue', value);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
+        // Save current code to localStorage
+        localStorage.setItem('codeEditorValue', value);
+      }
 
       setOutput(data.response ?? null);
     } catch (e: unknown) {
@@ -240,6 +250,7 @@ export default function CodeEditor() {
       } else {
         setOutput(null);
       }
+      // eslint-disable-next-line no-console
       console.error(e);
     } finally {
       setLoading(false);
@@ -253,7 +264,9 @@ export default function CodeEditor() {
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+    if (typeof window !== 'undefined' && navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
   };
 
   const loadHistoryItem = (item: { code: string }) => {
@@ -282,6 +295,7 @@ export default function CodeEditor() {
             onClick={() => setSettingsOpen(!settingsOpen)}
             className="p-2 rounded hover:bg-gray-700 transition-colors"
             title="Editor Settings"
+            type="button"
           >
             <Settings size={18} />
           </button>
@@ -290,6 +304,7 @@ export default function CodeEditor() {
             <button
               className="flex items-center gap-1 p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
               onClick={() => setDropdownOpen(!dropdownOpen)}
+              type="button"
             >
               History <ChevronDown size={16} />
             </button>
@@ -316,7 +331,7 @@ export default function CodeEditor() {
                               : "--:--:--"}
                           </span>
                         </div>
-                        <div className="truncate text-sm">{(item as any).query || "Query"}</div>
+                        <div className="truncate text-sm">{item.query || "Query"}</div>
                       </li>
                     ))}
                   </ul>
@@ -382,9 +397,12 @@ export default function CodeEditor() {
           <button
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => {
-              localStorage.setItem('codeEditorValue', value);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('codeEditorValue', value);
+              }
             }}
             title="Save to local storage"
+            type="button"
           >
             <Save size={14} />
           </button>
@@ -392,6 +410,7 @@ export default function CodeEditor() {
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => copyToClipboard(value)}
             title="Copy code"
+            type="button"
           >
             <Copy size={14} />
           </button>
@@ -407,6 +426,7 @@ export default function CodeEditor() {
           }`}
           onClick={callAPI}
           disabled={loading}
+          type="button"
         >
           {loading ? <RotateCw className="animate-spin" size={16} /> : <Play size={16} />}
           {loading ? 'Running...' : 'Run Query'}
@@ -417,6 +437,7 @@ export default function CodeEditor() {
           <button
             className="px-3 py-2 text-gray-400 hover:text-gray-200 text-sm flex items-center gap-1"
             onClick={clearOutput}
+            type="button"
           >
             <XCircle size={14} /> Clear output
           </button>
@@ -431,6 +452,7 @@ export default function CodeEditor() {
               onClick={() => copyToClipboard(output)}
               className="text-gray-400 hover:text-white p-1 rounded"
               title="Copy response"
+              type="button"
             >
               <Copy size={14} />
             </button>
