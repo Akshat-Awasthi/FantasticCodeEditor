@@ -43,7 +43,6 @@ export default function CodeEditor() {
   const [theme, setTheme] = useState('vs-dark');
   const [fontSize, setFontSize] = useState(14);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const editorRef = useRef(null);
   const outputRef = useRef(null);
 
   useEffect(() => {
@@ -60,7 +59,7 @@ export default function CodeEditor() {
   }
 
   function monacoInitAutocomplete() {
-    // @ts-expect-error
+    // @ts-expect-error: Type mismatch due to third-party types
     const monaco = window.monaco;
     if (!monaco) return;
   
