@@ -55,13 +55,12 @@ export default function CodeEditor() {
     if (savedHistory) setHistory(JSON.parse(savedHistory));
   }, []);
 
-  function handleEditorDidMount(editor) {
-    editorRef.current = editor;
-    monacoInitAutocomplete(editor);
+  function handleEditorDidMount() {
+    monacoInitAutocomplete();
   }
 
-  function monacoInitAutocomplete(editor) {
-    // @ts-ignore
+  function monacoInitAutocomplete() {
+    // @ts-expect-error
     const monaco = window.monaco;
     if (!monaco) return;
   

@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API error:', error);
     return NextResponse.json(
       { error: error.message || 'An error occurred' },
@@ -44,10 +44,8 @@ export async function POST(req: NextRequest) {
 }
 
 async function callGemini(model: string, method: string, query: string) {
-  // Gemini's main model is "gemini-pro"
   const geminiModel = model;
 
-  // Gemini's API for text generation
   if (method === 'chat' || method === 'completion') {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_API_KEY}`,
