@@ -1,6 +1,6 @@
 'use client';
 import dynamic from 'next/dynamic';
-import { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Play, Copy, Save, Settings, ChevronDown, XCircle, RotateCw } from 'lucide-react';
 
 const MonacoEditor = dynamic(
@@ -8,7 +8,27 @@ const MonacoEditor = dynamic(
   { ssr: false }
 );
 
-const MODEL_PROVIDERS = [
+type Model = {
+  label: string;
+  methods: string[];
+};
+
+type Provider = {
+  label: string;
+  models: Model[];
+};
+
+type HistoryItem = {
+  code: string;
+  result: string;
+  timestamp: string;
+  provider: string;
+  model: string;
+  method: string;
+  query?: string;
+};
+
+const MODEL_PROVIDERS: Provider[] = [
   {
     label: 'Gemini',
     models: [
@@ -33,23 +53,23 @@ const MODEL_PROVIDERS = [
 ];
 
 export default function CodeEditor() {
-  const [value, setValue] = useState(
+  const [value, setValue] = useState<string>(
     `Gemini.gemini-2.0-flash.chat("What is the capital of France?")`
   );
-  const [output, setOutput] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [theme, setTheme] = useState('vs-dark');
-  const [fontSize, setFontSize] = useState(14);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const outputRef = useRef(null);
+  const [output, setOutput] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
+  const [theme, setTheme] = useState<string>('vs-dark');
+  const [fontSize, setFontSize] = useState<number>(14);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const outputRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // Load previous state from localStorage if available
     const savedCode = localStorage.getItem('codeEditorValue');
     if (savedCode) setValue(savedCode);
-    
+
     const savedHistory = localStorage.getItem('codeEditorHistory');
     if (savedHistory) setHistory(JSON.parse(savedHistory));
   }, []);
@@ -62,21 +82,22 @@ export default function CodeEditor() {
     // @ts-expect-error: Type mismatch due to third-party types
     const monaco = window.monaco;
     if (!monaco) return;
-  
-    monaco.languages.registerCompletionItemProvider('javascript', {
+
+    // @ts-expect-error: Type mismatch due to third-party types
+    window.monaco.languages.registerCompletionItemProvider('javascript', {
       triggerCharacters: ['.', '('],
-      provideCompletionItems: (model, position) => {
+      provideCompletionItems: (model: any, position: any) => {
         const textUntilPosition = model.getValueInRange({
           startLineNumber: 1,
           startColumn: 1,
           endLineNumber: position.lineNumber,
           endColumn: position.column,
         });
-  
+
         // Remove whitespace for easier parsing
         const code = textUntilPosition.replace(/\s/g, '');
-        let suggestions = [];
-  
+        let suggestions: any[] = [];
+
         // Regex to match the current context
         // 1. Provider.
         const providerMatch = /^(\w+)\.$/.exec(code);
@@ -84,20 +105,20 @@ export default function CodeEditor() {
         const modelMatch = /^(\w+)\.([\w\-.]+)\.$/.exec(code);
         // 3. Provider.Model.method(
         const methodMatch = /^(\w+)\.([\w\-.]+)\.(\w+)\($/.exec(code);
-  
+
         if (!code || code === '' || code === '.') {
-            // Suggest only the first provider ("Gemini") when the editor is empty
-            const firstProvider = MODEL_PROVIDERS[0];
-            suggestions = [
-              {
-                label: firstProvider.label,
-                kind: monaco.languages.CompletionItemKind.Class,
-                insertText: firstProvider.label,
-                detail: `AI Provider`,
-                documentation: `${firstProvider.models.length} available models`,
-              },
-            ];
-          } else if (providerMatch) {
+          // Suggest only the first provider ("Gemini") when the editor is empty
+          const firstProvider = MODEL_PROVIDERS[0];
+          suggestions = [
+            {
+              label: firstProvider.label,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: firstProvider.label,
+              detail: `AI Provider`,
+              documentation: `${firstProvider.models.length} available models`,
+            },
+          ];
+        } else if (providerMatch) {
           // Suggest models for the provider
           const provider = MODEL_PROVIDERS.find((p) => p.label === providerMatch[1]);
           if (provider) {
@@ -134,19 +155,39 @@ export default function CodeEditor() {
             },
           ];
         }
-  
+
         return { suggestions };
       },
     });
   }
 
+  function parseCall(code: string) {
+    // Match: <Provider>.<Model>.<method>("query"), allowing dashes and dots in model
+    const match = /(\w+)\.([\w\-.]+)\.(\w+)\("([^"]*)"\)/.exec(code);
+    if (!match) throw new Error('Invalid call syntax. Expected format: Provider.Model.method("query")');
+    return {
+      provider: match[1],
+      model: match[2],
+      method: match[3],
+      query: match[4]
+    };
+  }
+
+  // Allow Shift+Enter to run
+  function handleEditorKeyDown(_: unknown, event: React.KeyboardEvent) {
+    if (event.shiftKey && event.key === "Enter") {
+      callAPI();
+      event.preventDefault();
+    }
+  }
+
   const callAPI = async () => {
     try {
       const { provider, model, method, query } = parseCall(value);
-      
+
       setLoading(true);
       setOutput("Calling API, please wait...");
-  
+
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: {
@@ -165,61 +206,51 @@ export default function CodeEditor() {
       }
 
       const data = await res.json();
-      
+
       // Save to history
-      const newHistoryItem = {
+      const newHistoryItem: HistoryItem = {
         code: value,
         result: data.response,
         timestamp: new Date().toISOString(),
         provider,
         model,
-        method
+        method,
+        query,
       };
-      
-      const updatedHistory = [newHistoryItem, ...history.slice(0, 9)];
+
+      const updatedHistory = [newHistoryItem, ...(history ? history.slice(0, 9) : [])];
       setHistory(updatedHistory);
       localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
-      
+
       // Save current code to localStorage
       localStorage.setItem('codeEditorValue', value);
-      
-      setOutput(data.response);
-    } catch (e) {
-      setOutput(e instanceof Error ? e.message : String(e));
+
+      setOutput(data.response ?? null);
+    } catch (e: any) {
+      if (e instanceof Error) {
+        setOutput(e.message ? e.message : null);
+      } else if (typeof e === "string") {
+        setOutput(e);
+      } else {
+        setOutput(null);
+      }
       console.error(e);
     } finally {
       setLoading(false);
-      if (outputRef.current) {
+      if (
+        outputRef.current &&
+        typeof outputRef.current.scrollIntoView === "function"
+      ) {
         outputRef.current.scrollIntoView({ behavior: 'smooth' });
       }
     }
   };
 
-  function parseCall(code) {
-    // Match: <Provider>.<Model>.<method>("query"), allowing dashes and dots in model
-    const match = /(\w+)\.([\w\-.]+)\.(\w+)\("([^"]*)"\)/.exec(code);
-    if (!match) throw new Error('Invalid call syntax. Expected format: Provider.Model.method("query")');
-    return {
-      provider: match[1],
-      model: match[2],
-      method: match[3],
-      query: match[4]
-    };
-  }
-
-  // Allow Shift+Enter to run
-  function handleEditorKeyDown(_, event) {
-    if (event.shiftKey && event.keyCode === 13) {
-      callAPI();
-      event.preventDefault();
-    }
-  }
-
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
-  const loadHistoryItem = (item) => {
+  const loadHistoryItem = (item: { code: string }) => {
     setValue(item.code);
     setDropdownOpen(false);
   };
@@ -239,7 +270,7 @@ export default function CodeEditor() {
             Interactive API testing environment with autocompletion
           </p>
         </div>
-        
+
         <div className="flex gap-2">
           <button
             onClick={() => setSettingsOpen(!settingsOpen)}
@@ -248,15 +279,15 @@ export default function CodeEditor() {
           >
             <Settings size={18} />
           </button>
-          
+
           <div className="relative">
-            <button 
+            <button
               className="flex items-center gap-1 p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
               onClick={() => setDropdownOpen(!dropdownOpen)}
             >
               History <ChevronDown size={16} />
             </button>
-            
+
             {dropdownOpen && (
               <div className="absolute right-0 mt-1 w-64 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
                 {history.length === 0 ? (
@@ -264,20 +295,22 @@ export default function CodeEditor() {
                 ) : (
                   <ul>
                     {history.map((item, index) => (
-                      <li 
+                      <li
                         key={index}
                         className="p-2 hover:bg-gray-700 cursor-pointer border-b border-gray-700 last:border-none"
                         onClick={() => loadHistoryItem(item)}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-xs text-blue-400">
-                            {item.provider}.{item.model}.{item.method}
+                            {(item as any).provider ?? "?"}.{(item as any).model ?? "?"}.{(item as any).method ?? "?"}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {new Date(item.timestamp).toLocaleTimeString()}
+                            {item && (item as any).timestamp
+                              ? new Date((item as any).timestamp).toLocaleTimeString()
+                              : "--:--:--"}
                           </span>
                         </div>
-                        <div className="truncate text-sm">{item.query || "Query"}</div>
+                        <div className="truncate text-sm">{(item as any).query || "Query"}</div>
                       </li>
                     ))}
                   </ul>
@@ -287,12 +320,12 @@ export default function CodeEditor() {
           </div>
         </div>
       </div>
-      
+
       {settingsOpen && (
         <div className="mb-4 p-3 bg-gray-800 rounded flex gap-4 items-center">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Theme</label>
-            <select 
+            <select
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
               className="bg-gray-700 rounded p-1 text-sm"
@@ -301,7 +334,7 @@ export default function CodeEditor() {
               <option value="light">Light</option>
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm text-gray-400 mb-1">Font Size</label>
             <select
@@ -324,8 +357,8 @@ export default function CodeEditor() {
           value={value}
           theme={theme}
           onMount={handleEditorDidMount}
-          onChange={(newVal) => setValue(newVal || '')}
-          options={{ 
+          onChange={(newVal: string | undefined) => setValue(newVal || '')}
+          options={{
             automaticLayout: true,
             fontSize: fontSize,
             tabSize: 2,
@@ -337,11 +370,10 @@ export default function CodeEditor() {
             folding: true,
             lineDecorationsWidth: 10,
           }}
-          onKeyDown={handleEditorKeyDown}
         />
-        
+
         <div className="absolute top-2 right-2 flex gap-1">
-          <button 
+          <button
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => {
               localStorage.setItem('codeEditorValue', value);
@@ -350,7 +382,7 @@ export default function CodeEditor() {
           >
             <Save size={14} />
           </button>
-          <button 
+          <button
             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs flex items-center gap-1"
             onClick={() => copyToClipboard(value)}
             title="Copy code"
@@ -359,12 +391,12 @@ export default function CodeEditor() {
           </button>
         </div>
       </div>
-      
+
       <div className="flex justify-between mt-3">
         <button
           className={`px-4 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-            loading 
-              ? 'bg-gray-700 text-gray-300 cursor-not-allowed' 
+            loading
+              ? 'bg-gray-700 text-gray-300 cursor-not-allowed'
               : 'bg-blue-600 hover:bg-blue-700 text-white'
           }`}
           onClick={callAPI}
@@ -374,7 +406,7 @@ export default function CodeEditor() {
           {loading ? 'Running...' : 'Run Query'}
           <span className="ml-1 opacity-75 text-xs">(Shift+Enter)</span>
         </button>
-        
+
         {output && (
           <button
             className="px-3 py-2 text-gray-400 hover:text-gray-200 text-sm flex items-center gap-1"

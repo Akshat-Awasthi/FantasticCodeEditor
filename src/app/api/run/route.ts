@@ -34,10 +34,18 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-  } catch (error: unknown) {
+  } catch (error) {
     console.error('API error:', error);
     return NextResponse.json(
-      { error: error.message || 'An error occurred' },
+      {
+        error:
+          typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof (error as any).message === "string"
+            ? (error as any).message
+            : "An error occurred",
+      },
       { status: 500 }
     );
   }
