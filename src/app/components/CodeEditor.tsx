@@ -1,34 +1,15 @@
 'use client';
 import dynamic from 'next/dynamic';
-import React, { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Play, Copy, Save, Settings, ChevronDown, XCircle, RotateCw } from 'lucide-react';
+import type * as monacoEditor from 'monaco-editor';
 
 const MonacoEditor = dynamic(
   () => import('@monaco-editor/react'),
   { ssr: false }
 );
 
-type Model = {
-  label: string;
-  methods: string[];
-};
-
-type Provider = {
-  label: string;
-  models: Model[];
-};
-
-type HistoryItem = {
-  code: string;
-  result: string;
-  timestamp: string;
-  provider: string;
-  model: string;
-  method: string;
-  query?: string;
-};
-
-const MODEL_PROVIDERS: Provider[] = [
+const MODEL_PROVIDERS = [
   {
     label: 'Gemini',
     models: [
@@ -52,17 +33,38 @@ const MODEL_PROVIDERS: Provider[] = [
   },
 ];
 
+type HistoryItem = {
+  code: string;
+  result: string;
+  timestamp: string;
+  provider: string;
+  model: string;
+  method: string;
+};
+
+function parseCall(code: string) {
+  // Match: <Provider>.<Model>.<method>("query"), allowing dashes and dots in model
+  const match = /(\w+)\.([\w\-.]+)\.(\w+)\("([^"]*)"\)/.exec(code);
+  if (!match) throw new Error('Invalid call syntax. Expected format: Provider.Model.method("query")');
+  return {
+    provider: match[1],
+    model: match[2],
+    method: match[3],
+    query: match[4]
+  };
+}
+
 export default function CodeEditor() {
-  const [value, setValue] = useState<string>(
+  const [value, setValue] = useState(
     `Gemini.gemini-2.0-flash.chat("What is the capital of France?")`
   );
   const [output, setOutput] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
-  const [theme, setTheme] = useState<string>('vs-dark');
-  const [fontSize, setFontSize] = useState<number>(14);
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [theme, setTheme] = useState('vs-dark');
+  const [fontSize, setFontSize] = useState(14);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -80,13 +82,16 @@ export default function CodeEditor() {
 
   function monacoInitAutocomplete() {
     // @ts-expect-error: Type mismatch due to third-party types
-    const monaco = window.monaco;
+    const monaco: typeof monacoEditor | undefined = window.monaco;
     if (!monaco) return;
 
     // @ts-expect-error: Type mismatch due to third-party types
     window.monaco.languages.registerCompletionItemProvider('javascript', {
       triggerCharacters: ['.', '('],
-      provideCompletionItems: (model: any, position: any) => {
+      provideCompletionItems: (
+        model: monacoEditor.editor.ITextModel,
+        position: monacoEditor.Position
+      ) => {
         const textUntilPosition = model.getValueInRange({
           startLineNumber: 1,
           startColumn: 1,
@@ -96,7 +101,7 @@ export default function CodeEditor() {
 
         // Remove whitespace for easier parsing
         const code = textUntilPosition.replace(/\s/g, '');
-        let suggestions: any[] = [];
+        let suggestions: monacoEditor.languages.CompletionItem[] = [];
 
         // Regex to match the current context
         // 1. Provider.
@@ -116,6 +121,12 @@ export default function CodeEditor() {
               insertText: firstProvider.label,
               detail: `AI Provider`,
               documentation: `${firstProvider.models.length} available models`,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
             },
           ];
         } else if (providerMatch) {
@@ -127,6 +138,12 @@ export default function CodeEditor() {
               kind: monaco.languages.CompletionItemKind.Variable,
               insertText: m.label,
               detail: `${provider.label} Model`,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
               documentation: `Supports: ${m.methods.join(', ')}`,
             }));
           }
@@ -140,6 +157,12 @@ export default function CodeEditor() {
               kind: monaco.languages.CompletionItemKind.Method,
               insertText: `${method}("`,
               detail: `${method} method`,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
               documentation: `Call the ${method} API with your prompt`,
             }));
           }
@@ -152,6 +175,12 @@ export default function CodeEditor() {
               insertText: 'Your question here")',
               detail: 'Query',
               documentation: 'Type your question or prompt for the model',
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
             },
           ];
         }
@@ -161,33 +190,11 @@ export default function CodeEditor() {
     });
   }
 
-  function parseCall(code: string) {
-    // Match: <Provider>.<Model>.<method>("query"), allowing dashes and dots in model
-    const match = /(\w+)\.([\w\-.]+)\.(\w+)\("([^"]*)"\)/.exec(code);
-    if (!match) throw new Error('Invalid call syntax. Expected format: Provider.Model.method("query")');
-    return {
-      provider: match[1],
-      model: match[2],
-      method: match[3],
-      query: match[4]
-    };
-  }
-
-  // Allow Shift+Enter to run
-  function handleEditorKeyDown(_: unknown, event: React.KeyboardEvent) {
-    if (event.shiftKey && event.key === "Enter") {
-      callAPI();
-      event.preventDefault();
-    }
-  }
-
   const callAPI = async () => {
+    setLoading(true);
+    setOutput("Calling API, please wait...");
     try {
       const { provider, model, method, query } = parseCall(value);
-
-      setLoading(true);
-      setOutput("Calling API, please wait...");
-
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: {
@@ -214,11 +221,10 @@ export default function CodeEditor() {
         timestamp: new Date().toISOString(),
         provider,
         model,
-        method,
-        query,
+        method
       };
 
-      const updatedHistory = [newHistoryItem, ...(history ? history.slice(0, 9) : [])];
+      const updatedHistory: HistoryItem[] = [newHistoryItem, ...(history ? history.slice(0, 9) : [])];
       setHistory(updatedHistory);
       localStorage.setItem('codeEditorHistory', JSON.stringify(updatedHistory));
 
@@ -226,7 +232,7 @@ export default function CodeEditor() {
       localStorage.setItem('codeEditorValue', value);
 
       setOutput(data.response ?? null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (e instanceof Error) {
         setOutput(e.message ? e.message : null);
       } else if (typeof e === "string") {
@@ -302,11 +308,11 @@ export default function CodeEditor() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-xs text-blue-400">
-                            {(item as any).provider ?? "?"}.{(item as any).model ?? "?"}.{(item as any).method ?? "?"}
+                            {item.provider ?? "?"}.{item.model ?? "?"}.{item.method ?? "?"}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {item && (item as any).timestamp
-                              ? new Date((item as any).timestamp).toLocaleTimeString()
+                            {item && item.timestamp
+                              ? new Date(item.timestamp).toLocaleTimeString()
                               : "--:--:--"}
                           </span>
                         </div>
@@ -357,7 +363,7 @@ export default function CodeEditor() {
           value={value}
           theme={theme}
           onMount={handleEditorDidMount}
-          onChange={(newVal: string | undefined) => setValue(newVal || '')}
+          onChange={(newVal) => setValue(newVal || '')}
           options={{
             automaticLayout: true,
             fontSize: fontSize,
