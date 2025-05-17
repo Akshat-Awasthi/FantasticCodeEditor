@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 'use client';
 import dynamic from 'next/dynamic';
 import { useRef, useState, useEffect } from 'react';
