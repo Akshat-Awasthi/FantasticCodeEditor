@@ -1,4 +1,3 @@
-// src/app/components/types.ts
 
 export type Cell = {
     id: string;

@@ -1,8 +1,7 @@
-// src/app/api/run/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 
-// Hardcoded Gemini API key (for demo only; use env vars in production)
-const GEMINI_API_KEY = "AIzaSyCUZtOAy4QbIWJzmbliTO3EQQzXKjLPPLg";
+const GEMINI_API_KEY = "AIzaSyCUZtOAy4QbIWJzmbliTO3EQQzXKjLPPLg"; // for now, but it should be put in .env file
 
 export async function POST(req: NextRequest) {
   try {
@@ -81,7 +80,6 @@ async function callGemini(model: string, method: string, query: string) {
       raw: data
     };
   } else {
-    // Placeholder for other methods
     return {
       response: `Method '${method}' would be handled here with query: "${query}"`,
       model: geminiModel
